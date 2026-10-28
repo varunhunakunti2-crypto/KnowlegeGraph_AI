@@ -40,10 +40,17 @@ yarn-error.log*
 .pnpm-debug.log*
 .vercel
 
-# Environment
+# Environment (never commit real credentials)
 .env
 .env.local
-.env.*.local
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+credentials.json
+service-account*.json
 
 # Storage and data
 storage/

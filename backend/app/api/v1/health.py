@@ -1,4 +1,6 @@
 """Health check endpoints."""
+import asyncio
+
 from fastapi import APIRouter, status
 from app.schemas.health import HealthResponse, ReadinessResponse
 from app.core.config import settings
@@ -8,6 +10,46 @@ import psycopg
 from typing import Dict, Any
 
 router = APIRouter()
+
+
+def _check_neo4j() -> None:
+    """Blocking Neo4j probe, executed in a worker thread."""
+    driver = GraphDatabase.driver(
+        settings.NEO4J_URI,
+        auth=(settings.NEO4J_USER, settings.NEO4J_PASSWORD),
+        connection_timeout=settings.DB_CONNECT_TIMEOUT_SECONDS,
+        max_connection_lifetime=3600,
+    )
+    try:
+        with driver.session(database=settings.NEO4J_DATABASE) as session:
+            session.run("RETURN 1").single()
+    finally:
+        driver.close()
+
+
+def _check_postgres() -> Dict[str, Any]:
+    """Blocking PostgreSQL + pgvector probe, executed in a worker thread."""
+    conn = psycopg.connect(
+        host=settings.POSTGRES_HOST,
+        port=settings.POSTGRES_PORT,
+        dbname=settings.POSTGRES_DB,
+        user=settings.POSTGRES_USER,
+        password=settings.POSTGRES_PASSWORD,
+        connect_timeout=settings.DB_CONNECT_TIMEOUT_SECONDS,
+    )
+    try:
+        result: Dict[str, Any] = {"status": "ready"}
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1")
+            cur.fetchone()
+            try:
+                cur.execute("SELECT 1 FROM pg_extension WHERE extname = 'vector'")
+                result["pgvector"] = "available" if cur.fetchone() else "missing"
+            except Exception:
+                result["pgvector"] = "unknown"
+        return result
+    finally:
+        conn.close()
 
 
 @router.get("/health", response_model=HealthResponse)
@@ -54,41 +96,14 @@ async def readiness() -> Dict[str, Any]:
     
     # Check Neo4j
     try:
-        driver = GraphDatabase.driver(
-            settings.NEO4J_URI,
-            auth=(settings.NEO4J_USER, settings.NEO4J_PASSWORD)
-        )
-        with driver.session(database=settings.NEO4J_DATABASE) as session:
-            session.run("RETURN 1").single()
-        driver.close()
+        await asyncio.to_thread(_check_neo4j)
         dependencies["neo4j"]["status"] = "ready"
     except Exception:
         dependencies["neo4j"]["status"] = "unreachable"
     
     # Check PostgreSQL
     try:
-        conn = psycopg.connect(
-            host=settings.POSTGRES_HOST,
-            port=settings.POSTGRES_PORT,
-            dbname=settings.POSTGRES_DB,
-            user=settings.POSTGRES_USER,
-            password=settings.POSTGRES_PASSWORD,
-            connect_timeout=3,
-        )
-        with conn.cursor() as cur:
-            cur.execute("SELECT 1")
-            cur.fetchone()
-            # Check pgvector
-            try:
-                cur.execute("SELECT 1 FROM pg_extension WHERE extname = 'vector'")
-                if cur.fetchone():
-                    dependencies["postgres"]["pgvector"] = "available"
-                else:
-                    dependencies["postgres"]["pgvector"] = "missing"
-            except Exception:
-                dependencies["postgres"]["pgvector"] = "unknown"
-        conn.close()
-        dependencies["postgres"]["status"] = "ready"
+        dependencies["postgres"].update(await asyncio.to_thread(_check_postgres))
     except Exception:
         dependencies["postgres"]["status"] = "unreachable"
     

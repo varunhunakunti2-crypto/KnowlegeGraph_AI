@@ -20,7 +20,10 @@ class DatabaseManager:
         try:
             self.neo4j_driver = GraphDatabase.driver(
                 settings.NEO4J_URI,
-                auth=(settings.NEO4J_USER, settings.NEO4J_PASSWORD)
+                auth=(settings.NEO4J_USER, settings.NEO4J_PASSWORD),
+                connection_timeout=settings.DB_CONNECT_TIMEOUT_SECONDS,
+                max_connection_lifetime=3600,
+                max_transaction_retry_time=15,
             )
             self.neo4j_driver.verify_connectivity()
             logger.info("Neo4j connection established")

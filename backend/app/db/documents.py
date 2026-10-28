@@ -17,6 +17,7 @@ class DocumentDB:
             dbname=settings.POSTGRES_DB,
             user=settings.POSTGRES_USER,
             password=settings.POSTGRES_PASSWORD,
+            connect_timeout=settings.DB_CONNECT_TIMEOUT_SECONDS,
         )
     
     @staticmethod
@@ -88,14 +89,16 @@ class DocumentDB:
     @staticmethod
     def get_document(doc_id: str) -> Optional[Dict]:
         conn = DocumentDB.get_connection()
-        with conn.cursor() as cur:
-            cur.execute("""
-                SELECT document_id, original_filename, file_size, page_count, 
-                       status, uploaded_at, processed_at, error_message, pages
-                FROM documents WHERE document_id = %s
-            """, (doc_id,))
-            row = cur.fetchone()
-        conn.close()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT document_id, original_filename, file_size, page_count, 
+                           status, uploaded_at, processed_at, error_message, pages
+                    FROM documents WHERE document_id = %s
+                """, (doc_id,))
+                row = cur.fetchone()
+        finally:
+            conn.close()
         if not row:
             return None
         return {
@@ -113,14 +116,16 @@ class DocumentDB:
     @staticmethod
     def list_documents() -> List[Dict]:
         conn = DocumentDB.get_connection()
-        with conn.cursor() as cur:
-            cur.execute("""
-                SELECT document_id, original_filename, file_size, page_count, 
-                       status, uploaded_at, processed_at, error_message
-                FROM documents ORDER BY uploaded_at DESC
-            """)
-            rows = cur.fetchall()
-        conn.close()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT document_id, original_filename, file_size, page_count, 
+                           status, uploaded_at, processed_at, error_message
+                    FROM documents ORDER BY uploaded_at DESC
+                """)
+                rows = cur.fetchall()
+        finally:
+            conn.close()
         return [{
             "document_id": str(row[0]),
             "original_filename": row[1],
@@ -133,16 +138,33 @@ class DocumentDB:
         } for row in rows]
     
     @staticmethod
+    def get_document_file_path(doc_id: str) -> Optional[str]:
+        """Return the stored path for a document without exposing it in APIs."""
+        conn = DocumentDB.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT file_path FROM documents WHERE document_id = %s", (doc_id,))
+                row = cur.fetchone()
+            return row[0] if row else None
+        finally:
+            conn.close()
+
+    @staticmethod
     def delete_document(doc_id: str) -> Optional[Dict]:
         conn = DocumentDB.get_connection()
-        with conn.cursor() as cur:
-            cur.execute("SELECT file_path FROM documents WHERE document_id = %s", (doc_id,))
-            row = cur.fetchone()
-            if not row:
-                conn.close()
-                return None
-            file_path = row[0]
-            cur.execute("DELETE FROM documents WHERE document_id = %s", (doc_id,))
-        conn.commit()
-        conn.close()
-        return {"file_path": file_path}
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT file_path FROM documents WHERE document_id = %s", (doc_id,))
+                row = cur.fetchone()
+                if not row:
+                    return None
+                file_path = row[0]
+                # Chunks/pages/embeddings/jobs cascade from this row.
+                cur.execute("DELETE FROM documents WHERE document_id = %s", (doc_id,))
+            conn.commit()
+            return {"file_path": file_path}
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
