@@ -39,6 +39,9 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 .vercel
+# Playwright
+frontend/test-results/
+frontend/playwright-report/
 
 # Environment (never commit real credentials)
 .env

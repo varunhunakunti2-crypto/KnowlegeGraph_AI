@@ -1,9 +1,19 @@
 """Configuration and environment variable validation for KnowledgeGraph AI.
 All inference must run locally. No secrets are logged.
 """
+from pathlib import Path
+
 from pydantic_settings import BaseSettings
 from pydantic import Field, model_validator
 from typing import List
+
+_BACKEND_DIR = Path(__file__).resolve().parents[2]
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+
+# Load an optional backend/.env first, then the repo-root .env. Absolute paths
+# keep configuration working regardless of the process working directory (the
+# README starts uvicorn from backend/). Later files take precedence.
+_ENV_FILES = (_BACKEND_DIR / ".env", _REPO_ROOT / ".env")
 
 
 class Settings(BaseSettings):
@@ -92,7 +102,7 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = Field(default="INFO")
     
     class Config:
-        env_file = ".env"
+        env_file = _ENV_FILES
         env_file_encoding = "utf-8"
         case_sensitive = True
     

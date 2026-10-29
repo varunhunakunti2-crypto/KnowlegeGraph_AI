@@ -13,6 +13,60 @@ import re
 
 _CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
+# Schema-constrained decoding keeps Qwen3 from spending its token budget on
+# free-form reasoning before the JSON payload. It also makes malformed JSON
+# effectively impossible, so extraction failures are surfaced instead of
+# silently returning an empty graph.
+_EXTRACTION_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "entities": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "type": {
+                        "type": "string",
+                        "enum": list(APPROVED_ENTITY_TYPES),
+                    },
+                    "aliases": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                    },
+                    "confidence": {"type": "number"},
+                    "evidence": {"type": "string"},
+                },
+                "required": ["name", "type", "confidence", "evidence"],
+            },
+        },
+        "relationships": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "subject": {"type": "string"},
+                    "predicate": {
+                        "type": "string",
+                        "enum": list(APPROVED_PREDICATES),
+                    },
+                    "object": {"type": "string"},
+                    "confidence": {"type": "number"},
+                    "evidence": {"type": "string"},
+                },
+                "required": [
+                    "subject",
+                    "predicate",
+                    "object",
+                    "confidence",
+                    "evidence",
+                ],
+            },
+        },
+    },
+    "required": ["entities", "relationships"],
+}
+
 
 class GraphExtractionService:
     """Extract entities and relationships from text chunks."""
@@ -37,6 +91,8 @@ class GraphExtractionService:
 Only extract entities of types: Person, Organization, Technology, Concept, Location, Event.
 Only extract relationships as subject-predicate-object triples with clear predicates.
 Allowed predicates: {', '.join(self.APPROVED_PREDICATES)}.
+Every relationship subject and object MUST also appear in the entities list.
+Do not output a relationship whose endpoint is not an entity.
 
 For each entity and relationship, you MUST provide:
 - source evidence (exact quote from text)
@@ -156,7 +212,12 @@ Text:
         """Extract graph elements from a single chunk."""
         try:
             prompt = self._get_extraction_prompt(chunk.get("chunk_text", ""))
-            response = await self.llm.generate(prompt, temperature=0.1)
+            response = await self.llm.generate(
+                prompt,
+                temperature=0.1,
+                response_format=_EXTRACTION_SCHEMA,
+                think=False,
+            )
 
             # Extract JSON from response
             start = response.find('{')

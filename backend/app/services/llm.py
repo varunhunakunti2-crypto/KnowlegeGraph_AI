@@ -46,8 +46,15 @@ class LLMService:
             }
     
     async def generate(self, prompt: str, system_prompt: str = None, 
-                       temperature: float = None, max_tokens: int = None) -> str:
-        """Generate response with bounded concurrency and timeouts."""
+                       temperature: float = None, max_tokens: int = None,
+                       response_format: Optional[Dict[str, Any]] = None,
+                       think: Optional[bool] = None) -> str:
+        """Generate response with bounded concurrency and timeouts.
+
+        `response_format` is passed to Ollama's structured-output `format`
+        parameter. Setting `think=False` disables Qwen3 reasoning for
+        structured tasks so the token budget is spent on the answer.
+        """
         if temperature is None:
             temperature = settings.OLLAMA_TEMPERATURE
         if max_tokens is None:
@@ -61,20 +68,25 @@ class LLMService:
                         messages.append({"role": "system", "content": system_prompt})
                     messages.append({"role": "user", "content": prompt})
                     
+                    chat_kwargs: Dict[str, Any] = {
+                        "model": self.model,
+                        "messages": messages,
+                        "options": {
+                            "temperature": temperature,
+                            "num_predict": max_tokens,
+                            "num_ctx": settings.MODEL_CONTEXT_LENGTH,
+                        },
+                    }
+                    if response_format is not None:
+                        chat_kwargs["format"] = response_format
+                    if think is not None:
+                        chat_kwargs["think"] = think
+
                     # The Ollama client is synchronous. Run it in a worker
                     # thread so a slow local model cannot block the FastAPI
                     # event loop, and bound each attempt with a timeout.
                     response = await asyncio.wait_for(
-                        asyncio.to_thread(
-                            self.client.chat,
-                            model=self.model,
-                            messages=messages,
-                            options={
-                                "temperature": temperature,
-                                "num_predict": max_tokens,
-                                "num_ctx": settings.MODEL_CONTEXT_LENGTH,
-                            },
-                        ),
+                        asyncio.to_thread(self.client.chat, **chat_kwargs),
                         timeout=settings.OLLAMA_TIMEOUT,
                     )
                     

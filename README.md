@@ -10,7 +10,7 @@ A fully local GraphRAG document assistant for Windows with RTX 4050 6GB VRAM and
 - **Graph Database:** Neo4j Community Edition
 - **Vector Store:** PostgreSQL + pgvector
 - **PDF Processing:** PyMuPDF
-- **Testing:** pytest
+- **Testing:** pytest (backend), Playwright (frontend display)
 
 ## Architecture
 
@@ -110,4 +110,14 @@ Target: Windows, NVIDIA RTX 4050 (6GB VRAM), 16GB RAM. Model sizes and concurren
 
 ## Testing
 
-See [docs/TESTING_STRATEGY.md](docs/TESTING_STRATEGY.md) for the testing approach using pytest.
+- [docs/TESTING_STRATEGY.md](docs/TESTING_STRATEGY.md) - test organization, markers, and commands
+- [docs/EVALUATION.md](docs/EVALUATION.md) - deterministic GraphRAG evaluation, metrics, vector-only comparison, Playwright display tests, and the optional live suite
+
+```powershell
+cd backend
+.\.venv\Scripts\python.exe -m pytest -q          # deterministic suite
+.\.venv\Scripts\python.exe -m scripts.evaluate   # evaluation report
+
+cd ..\frontend
+npm run test:e2e                                 # browser display tests
+```

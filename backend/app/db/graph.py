@@ -4,6 +4,7 @@ from app.core.config import settings
 from app.core.logging import logger
 from typing import List, Dict
 import hashlib
+import time
 
 
 class GraphDB:
@@ -67,7 +68,7 @@ class GraphDB:
             # Store relationships
             for rel in extraction_result.relationships:
                 try:
-                    session.execute_write(
+                    created = session.execute_write(
                         self._create_relationship,
                         rel.subject,
                         rel.predicate,
@@ -78,7 +79,8 @@ class GraphDB:
                         rel.page_number,
                         rel.evidence
                     )
-                    rels_stored += 1
+                    if created:
+                        rels_stored += 1
                 except Exception as e:
                     logger.error(f"Failed to store relationship: {type(e).__name__}")
         
@@ -113,6 +115,9 @@ class GraphDB:
         # Both endpoints must be entities sourced from the same document.
         # Without this scope a relationship could silently connect an entity
         # from one document to an unrelated entity in another document.
+        # The return value tells the caller whether an edge was actually
+        # created: model output can name an endpoint it never extracted, and
+        # counting that as a stored relationship would be misleading.
         query = """
         MATCH (s:Entity)-[:SOURCED_FROM]->(:Document {id: $doc_id})
         MATCH (o:Entity)-[:SOURCED_FROM]->(:Document {id: $doc_id})
@@ -127,10 +132,12 @@ class GraphDB:
             r.document_id = $doc_id,
             r.page_number = $page_num,
             r.evidence = $evidence
+        RETURN count(r) AS created
         """
-        tx.run(query, subject=subject, predicate=predicate, obj=obj,
-               confidence=confidence, chunk_id=chunk_id, doc_id=doc_id,
-               page_num=page_num, evidence=evidence)
+        record = tx.run(query, subject=subject, predicate=predicate, obj=obj,
+                        confidence=confidence, chunk_id=chunk_id, doc_id=doc_id,
+                        page_num=page_num, evidence=evidence).single()
+        return bool(record and record["created"])
     
     def get_graph(self, document_id: str = None, limit: int = 100) -> Dict:
         """Get nodes and edges for visualization.
@@ -187,11 +194,35 @@ class GraphDB:
             
             return {"nodes": list(nodes.values()), "edges": edges}
     
-    def delete_document_graph(self, document_id: str):
-        """Delete all graph evidence for a document."""
-        driver = self.connect()
-        with driver.session(database=settings.NEO4J_DATABASE) as session:
-            session.execute_write(self._delete_document, document_id)
+    def delete_document_graph(self, document_id: str, retries: int = 2):
+        """Delete all graph evidence for a document.
+
+        Deletion is idempotent, so transient Neo4j failures are retried with a
+        short exponential backoff. Callers still get the final exception so the
+        API can report that graph cleanup was incomplete.
+        """
+        attempts = max(1, int(retries) + 1)
+        last_error: Exception | None = None
+
+        for attempt in range(attempts):
+            try:
+                driver = self.connect()
+                with driver.session(database=settings.NEO4J_DATABASE) as session:
+                    session.execute_write(self._delete_document, document_id)
+                return
+            except Exception as exc:
+                last_error = exc
+                if attempt >= attempts - 1:
+                    break
+                delay = min(0.5 * (2 ** attempt), 2.0)
+                logger.warning(
+                    f"Graph deletion attempt {attempt + 1}/{attempts} failed: "
+                    f"{type(exc).__name__}; retrying in {delay:.1f}s"
+                )
+                time.sleep(delay)
+
+        assert last_error is not None
+        raise last_error
     
     @staticmethod
     def _delete_document(tx, document_id):
