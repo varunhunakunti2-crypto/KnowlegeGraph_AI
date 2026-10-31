@@ -5,6 +5,7 @@ from app.generation.answer import answer_generator
 from app.schemas.chat import ChatRequest, ChatResponse, Citation
 from app.db.documents import DocumentDB
 from app.core.logging import logger
+from app.core.memory import InsufficientMemoryError
 from app.core.security import SecurityValidationError, validate_uuid
 
 router = APIRouter()
@@ -22,7 +23,7 @@ async def chat(request: ChatRequest):
         # A document-scoped chat must not proceed against a missing document;
         # this also avoids graph queries with an attacker-chosen identifier.
         try:
-            if not DocumentDB.get_document(document_id):
+            if not DocumentDB.document_exists(document_id):
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="Document not found",
@@ -64,11 +65,12 @@ async def chat(request: ChatRequest):
         citations = []
         for cit in generation_result["citations"]:
             try:
-                doc = DocumentDB.get_document(cit["document_id"])
+                # Only the filename is needed; do not load the pages snapshot.
+                filename = DocumentDB.get_document_filename(cit["document_id"])
                 citations.append(Citation(
                     chunk_id=cit["chunk_id"],
                     document_id=cit["document_id"],
-                    document_name=doc["original_filename"] if doc else None,
+                    document_name=filename,
                     page_number=cit["page_number"],
                     snippet=cit["snippet"]
                 ))
@@ -98,6 +100,12 @@ async def chat(request: ChatRequest):
         )
     except HTTPException:
         raise
+    except InsufficientMemoryError as exc:
+        logger.error("Chat stopped: insufficient local memory")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        )
     except Exception as exc:
         logger.error(f"Chat failed: {type(exc).__name__}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import ReactFlow, { 
   Node, 
   Edge, 
+  NodeMouseHandler,
   Controls, 
   Background, 
   useNodesState, 
@@ -11,27 +12,28 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { apiClient } from '@/lib/api';
+import { GraphResponse } from '@/types/api';
+
+interface GraphNodeData {
+  label: string;
+  type: string;
+}
 
 export default function GraphPage() {
-  const [nodes, setNodes, onNodesChange] = useNodesState([]);
+  const [nodes, setNodes, onNodesChange] = useNodesState<GraphNodeData>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [loading, setLoading] = useState(true);
-  const [selectedNode, setSelectedNode] = useState<any>(null);
+  const [selectedNode, setSelectedNode] = useState<Node<GraphNodeData> | null>(null);
 
-  useEffect(() => {
-    fetchGraph();
-  }, []);
-
-  const fetchGraph = async () => {
+  const fetchGraph = useCallback(async () => {
     try {
-      setLoading(true);
-      const data: any = await apiClient.getGraph();
-      const flowNodes: Node[] = data.nodes.map((n: any, i: number) => ({
+      const data = (await apiClient.getGraph()) as GraphResponse;
+      const flowNodes: Node<GraphNodeData>[] = data.nodes.map((n, i) => ({
         id: n.id,
         data: { label: n.label, type: n.type },
         position: { x: i * 150, y: i * 100 },
       }));
-      const flowEdges: Edge[] = data.edges.map((e: any) => ({
+      const flowEdges: Edge[] = data.edges.map((e) => ({
         id: e.id,
         source: e.source,
         target: e.target,
@@ -41,13 +43,19 @@ export default function GraphPage() {
       setEdges(flowEdges);
     } catch (err) {
       console.error(err);
+      setNodes([]);
+      setEdges([]);
     } finally {
       setLoading(false);
     }
-  };
+  }, [setNodes, setEdges]);
 
-  const onNodeClick = useCallback((event: any, node: Node) => {
-    setSelectedNode(node);
+  useEffect(() => {
+    void fetchGraph();
+  }, [fetchGraph]);
+
+  const onNodeClick: NodeMouseHandler = useCallback((_event, node) => {
+    setSelectedNode(node as Node<GraphNodeData>);
   }, []);
 
   return (

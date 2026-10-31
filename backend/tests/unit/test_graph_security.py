@@ -209,14 +209,14 @@ async def test_graph_extraction_route_times_out(monkeypatch):
 
     monkeypatch.setattr(
         graph_api.DocumentDB,
-        "get_document",
-        staticmethod(lambda _id: {"document_id": _id}),
+        "document_exists",
+        staticmethod(lambda _id: True),
     )
     monkeypatch.setattr(
         graph_api.ChunkDB,
         "get_chunks_by_document",
         staticmethod(
-            lambda _id: [
+            lambda _id, limit=None: [
                 {
                     "chunk_id": "c1",
                     "document_id": _id,

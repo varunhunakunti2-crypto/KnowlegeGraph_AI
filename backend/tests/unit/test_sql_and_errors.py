@@ -123,7 +123,7 @@ def test_upload_validation_error_redacts_paths(client: TestClient, tmp_path, mon
 
 @pytest.mark.unit
 def test_indexing_error_does_not_leak_exception_details(client: TestClient, monkeypatch):
-    monkeypatch.setattr(documents.DocumentDB, "get_document", lambda _: {"document_id": DOC_ID})
+    monkeypatch.setattr(documents.DocumentDB, "document_exists", lambda _: True)
     monkeypatch.setattr(
         documents.VectorDB,
         "index_document_chunks",
@@ -149,7 +149,7 @@ def test_chat_rejects_malformed_document_id(client: TestClient):
 
 @pytest.mark.unit
 def test_chat_rejects_unknown_document(client: TestClient, monkeypatch):
-    monkeypatch.setattr(documents.DocumentDB, "get_document", lambda _: None)
+    monkeypatch.setattr(documents.DocumentDB, "document_exists", lambda _: False)
     response = client.post(
         "/api/v1/chat/",
         json={"question": "hello", "document_id": DOC_ID},

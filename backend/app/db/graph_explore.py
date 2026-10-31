@@ -222,9 +222,11 @@ class GraphExplorer:
         )
         driver = self.connect()
         with driver.session(database=settings.NEO4J_DATABASE) as session:
+            # Outgoing-only traversal prevents each relationship from being
+            # returned twice (once in each direction).
             cypher = """
             MATCH (e:Entity)-[:SOURCED_FROM]->(d:Document {id: $doc_id})
-            OPTIONAL MATCH (e)-[r:RELATION]-(e2:Entity)-[:SOURCED_FROM]->(d)
+            OPTIONAL MATCH (e)-[r:RELATION]->(e2:Entity)-[:SOURCED_FROM]->(d)
             WHERE e2 IS NULL OR e <> e2
             RETURN e, r, e2
             LIMIT $limit
@@ -241,8 +243,9 @@ class GraphExplorer:
                     nodes[e2["id"]] = {"id": e2["id"], "label": e2["name"], "type": e2["type"], "aliases": e2.get("aliases", [])}
                 r = record["r"]
                 if r and e and e2:
-                    edges.append({"id": f"e{hash(str(r))}", "source": e["id"], "target": e2["id"],
-                                "label": r.get("type", "RELATED"), "confidence": r.get("confidence")})
+                    label = r.get("type", "RELATED")
+                    edges.append({"id": f"{e['id']}-{e2['id']}-{label}", "source": e["id"], "target": e2["id"],
+                                "label": label, "confidence": r.get("confidence")})
             return {"nodes": list(nodes.values())[:limit_nodes], "edges": edges[:limit_nodes]}
 
 

@@ -10,6 +10,7 @@ from app.services.graph_extraction import graph_extraction_service
 from app.schemas.graph_explore import GraphResponse, EntitySearchResult, EntityDetail
 from app.core.config import settings
 from app.core.logging import logger
+from app.core.memory import InsufficientMemoryError
 from app.core.security import (
     SecurityValidationError,
     validate_identifier,
@@ -158,11 +159,15 @@ async def extract_graph(document_id: str):
     except SecurityValidationError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
 
-    if not DocumentDB.get_document(document_id):
+    if not DocumentDB.document_exists(document_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
 
     try:
-        chunks = ChunkDB.get_chunks_by_document(document_id)
+        # Fetch only one row more than the work limit: enough to report
+        # truncation without loading a large document's chunks into memory.
+        chunks = ChunkDB.get_chunks_by_document(
+            document_id, limit=settings.MAX_GRAPH_EXTRACTION_CHUNKS + 1
+        )
         if not chunks:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -209,6 +214,12 @@ async def extract_graph(document_id: str):
         }
     except HTTPException:
         raise
+    except InsufficientMemoryError as exc:
+        logger.error("Graph extraction stopped: insufficient local memory")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        )
     except Exception as exc:
         logger.error(f"Graph extraction failed: {type(exc).__name__}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

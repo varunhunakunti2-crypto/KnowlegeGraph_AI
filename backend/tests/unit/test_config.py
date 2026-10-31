@@ -20,3 +20,34 @@ def test_cors_origins_parsing():
     origins = settings.get_cors_origins()
     assert len(origins) == 2
     assert "http://localhost:3000" in origins
+
+
+@pytest.mark.unit
+def test_low_memory_profile_applies_small_safe_defaults():
+    settings = Settings(MEMORY_PROFILE="low-memory", _env_file=None)
+
+    assert settings.MODEL_CONTEXT_LENGTH == 2048
+    assert settings.OLLAMA_MAX_TOKENS == 384
+    assert settings.MAX_CONCURRENT_REQUESTS == 1
+    assert settings.OLLAMA_SINGLE_MODEL_RESIDENT is True
+    assert settings.INDEX_BATCH_SIZE == 4
+    assert settings.MAX_CONTEXT_TOKENS <= settings.MODEL_CONTEXT_LENGTH
+
+
+@pytest.mark.unit
+def test_explicit_values_override_low_memory_profile():
+    settings = Settings(
+        MEMORY_PROFILE="low-memory",
+        MODEL_CONTEXT_LENGTH=8192,
+        MAX_CONCURRENT_REQUESTS=2,
+        _env_file=None,
+    )
+
+    assert settings.MODEL_CONTEXT_LENGTH == 8192
+    assert settings.MAX_CONCURRENT_REQUESTS == 2
+
+
+@pytest.mark.unit
+def test_invalid_memory_profile_is_rejected():
+    with pytest.raises(Exception):
+        Settings(MEMORY_PROFILE="turbo", _env_file=None)

@@ -8,15 +8,20 @@ from app.services.llm import LLMService
 
 
 @pytest.mark.unit
-@patch("app.services.llm.Client")
-async def test_llm_generate_forwards_structured_output_options(mock_client):
+@patch("app.services.llm.get_client")
+async def test_llm_generate_forwards_structured_output_options(mock_get_client, monkeypatch):
     """Ollama must receive the JSON schema and the no-thinking flag."""
+    from app.services import llm
+
+    monkeypatch.setattr(llm.memory, "before_model_call", lambda *_: None)
+    monkeypatch.setattr(llm.memory, "after_model_call", lambda *_: None)
+
     mock_instance = Mock()
     mock_response = Mock()
     mock_response.message = Mock()
     mock_response.message.content = "{}"
     mock_instance.chat.return_value = mock_response
-    mock_client.return_value = mock_instance
+    mock_get_client.return_value = mock_instance
 
     service = LLMService()
     await service.generate(

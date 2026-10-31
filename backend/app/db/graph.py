@@ -152,14 +152,17 @@ class GraphDB:
             if document_id:
                 result = session.run("""
                     MATCH (e:Entity)-[r:SOURCED_FROM]->(d:Document {id: $doc_id})
-                    OPTIONAL MATCH (e)-[rel:RELATION]-(e2:Entity)-[:SOURCED_FROM]->(d)
+                    OPTIONAL MATCH (e)-[rel:RELATION]->(e2:Entity)-[:SOURCED_FROM]->(d)
                     WHERE e2 IS NULL OR e <> e2
                     RETURN e, rel, e2 LIMIT $limit
                 """, doc_id=document_id, limit=limit)
             else:
+                # Relationships are traversed outgoing-only so each edge is
+                # returned once. An undirected pattern would emit both the
+                # forward and reverse copy of every relationship.
                 result = session.run("""
                     MATCH (e:Entity)
-                    OPTIONAL MATCH (e)-[rel:RELATION]-(e2:Entity)
+                    OPTIONAL MATCH (e)-[rel:RELATION]->(e2:Entity)
                     RETURN e, rel, e2 LIMIT $limit
                 """, limit=limit)
             

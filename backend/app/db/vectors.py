@@ -4,6 +4,7 @@ from app.core.config import settings
 from app.services.embeddings import embedding_service
 from app.core.logging import logger
 from app.core.security import clamp_int
+from app.core import memory
 from typing import List, Dict, Optional
 from pgvector.psycopg import register_vector
 
@@ -36,67 +37,143 @@ class VectorDB:
     
     @staticmethod
     async def index_document_chunks(document_id: str) -> Dict:
-        """
-        Index all chunks for a document. Idempotent - skips already indexed.
+        """Index unindexed chunks in small, independently committed batches.
+
+        Resumable by design:
+
+        - only ``chunk_index > last`` rows are fetched, so a document is never
+          loaded into memory in full;
+        - every successful batch is committed before the next one starts;
+        - a failed batch is marked ``failed`` and retried on the next call,
+          because only ``indexed`` rows are skipped;
+        - indexing stops after ``MAX_INDEX_BATCH_FAILURES`` consecutive errors
+          instead of hammering a broken local model.
         """
         conn = VectorDB.get_connection()
+        conn.autocommit = True
+        indexed_count = 0
+        failed_count = 0
+        processed_count = 0
+        consecutive_failures = 0
+        last_index = -1
+        stop_reason: Optional[str] = None
+
+        batch_size = clamp_int(
+            settings.INDEX_BATCH_SIZE, 1, max(1, settings.BATCH_SIZE), 8
+        )
+        max_failures = max(1, settings.MAX_INDEX_BATCH_FAILURES)
+
+        try:
+            while True:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        SELECT chunk_id, chunk_text, chunk_index
+                        FROM document_chunks
+                        WHERE document_id = %s
+                          AND chunk_index > %s
+                          AND (embedding_status IS NULL OR embedding_status != 'indexed')
+                        ORDER BY chunk_index
+                        LIMIT %s
+                    """, (document_id, last_index, batch_size))
+                    rows = cur.fetchall()
+
+                if not rows:
+                    break
+
+                chunk_ids = [row[0] for row in rows]
+                texts = [row[1] for row in rows]
+                last_index = rows[-1][2]
+                processed_count += len(rows)
+
+                try:
+                    embeddings = await embedding_service.embed_batch(texts)
+                    if len(embeddings) != len(rows):
+                        raise ValueError("Embedding batch size mismatch")
+
+                    for embedding in embeddings:
+                        if len(embedding) != settings.EMBEDDING_DIMENSION:
+                            raise ValueError(
+                                "Embedding dimension does not match "
+                                f"EMBEDDING_DIMENSION={settings.EMBEDDING_DIMENSION}"
+                            )
+
+                    # Commit this batch before moving on, so a crash or OOM in a
+                    # later batch cannot discard completed work.
+                    with conn.transaction():
+                        with conn.cursor() as cur:
+                            for chunk_id, embedding in zip(chunk_ids, embeddings):
+                                cur.execute("""
+                                    UPDATE document_chunks
+                                    SET embedding = %s,
+                                        embedding_model = %s,
+                                        embedding_status = 'indexed',
+                                        indexed_at = CURRENT_TIMESTAMP
+                                    WHERE chunk_id = %s
+                                """, (embedding, settings.OLLAMA_EMBED_MODEL, chunk_id))
+                    indexed_count += len(rows)
+                    consecutive_failures = 0
+                except memory.InsufficientMemoryError as exc:
+                    VectorDB._mark_chunks_failed(chunk_ids)
+                    failed_count += len(rows)
+                    stop_reason = "out_of_memory"
+                    logger.error("Indexing stopped: local model is out of memory")
+                    raise memory.InsufficientMemoryError(
+                        f"{exc} Indexing is resumable: {indexed_count} chunks "
+                        "were committed. Retry POST /documents/{id}/index after "
+                        "freeing memory."
+                    ) from exc
+                except Exception as e:
+                    VectorDB._mark_chunks_failed(chunk_ids)
+                    failed_count += len(rows)
+                    consecutive_failures += 1
+                    logger.error(f"Batch indexing failed: {type(e).__name__}")
+                    stop_reason = type(e).__name__
+                    if consecutive_failures >= max_failures:
+                        logger.error(
+                            f"Stopping indexing after {consecutive_failures} "
+                            "consecutive failed batches"
+                        )
+                        break
+
+            status_info = VectorDB.get_indexing_status(document_id)
+            if status_info["failed"] == 0 and status_info["pending"] == 0:
+                result_status = "complete"
+            elif indexed_count > 0:
+                result_status = "partial"
+            else:
+                result_status = "failed" if failed_count else "complete"
+
+            return {
+                "status": result_status,
+                "indexed": indexed_count,
+                "failed": failed_count,
+                "processed": processed_count,
+                "total": status_info["total"],
+                "remaining": status_info["pending"] + status_info["failed"],
+                "batch_size": batch_size,
+                "resumable": True,
+                "stop_reason": stop_reason,
+            }
+        finally:
+            conn.close()
+
+    @staticmethod
+    def _mark_chunks_failed(chunk_ids: List) -> None:
+        """Best-effort failure marker in its own committed transaction."""
+        if not chunk_ids:
+            return
+        conn = VectorDB.get_connection()
+        conn.autocommit = True
         try:
             with conn.transaction():
-                cur = conn.cursor()
-                
-                # Get unindexed chunks
-                cur.execute("""
-                    SELECT chunk_id, chunk_text 
-                    FROM document_chunks 
-                    WHERE document_id = %s 
-                    AND (embedding_status IS NULL OR embedding_status != 'indexed')
-                    ORDER BY chunk_index
-                """, (document_id,))
-                chunks = cur.fetchall()
-                
-                if not chunks:
-                    return {"status": "complete", "indexed": 0, "message": "No chunks to index"}
-                
-                # Generate embeddings in batches
-                indexed_count = 0
-                batch_size = clamp_int(
-                    settings.EMBEDDING_BATCH_SIZE, 1, settings.BATCH_SIZE, 16
-                )
-                
-                for i in range(0, len(chunks), batch_size):
-                    batch = chunks[i:i + batch_size]
-                    texts = [chunk[1] for chunk in batch]
-                    chunk_ids = [chunk[0] for chunk in batch]
-                    
-                    try:
-                        embeddings = await embedding_service.embed_batch(texts)
-                        
-                        for chunk_id, embedding in zip(chunk_ids, embeddings):
-                            cur.execute("""
-                                UPDATE document_chunks 
-                                SET embedding = %s, 
-                                    embedding_model = %s,
-                                    embedding_status = 'indexed',
-                                    indexed_at = CURRENT_TIMESTAMP
-                                WHERE chunk_id = %s
-                            """, (embedding, settings.OLLAMA_EMBED_MODEL, chunk_id))
-                            indexed_count += 1
-                    except Exception as e:
-                        # Mark as failed
-                        for chunk_id in chunk_ids:
-                            cur.execute("""
-                                UPDATE document_chunks 
-                                SET embedding_status = 'failed'
-                                WHERE chunk_id = %s
-                            """, (chunk_id,))
-                        logger.error(f"Batch indexing failed: {type(e).__name__}")
-                
-                cur.close()
-            conn.commit()
-            return {"status": "complete", "indexed": indexed_count, "total": len(chunks)}
-        except Exception as e:
-            conn.rollback()
-            raise
+                with conn.cursor() as cur:
+                    cur.executemany(
+                        "UPDATE document_chunks SET embedding_status = 'failed' "
+                        "WHERE chunk_id = %s",
+                        [(chunk_id,) for chunk_id in chunk_ids],
+                    )
+        except Exception as exc:
+            logger.warning(f"Could not mark failed chunks: {type(exc).__name__}")
         finally:
             conn.close()
     
@@ -171,18 +248,24 @@ class VectorDB:
                 SELECT 
                     COUNT(*) as total,
                     COUNT(*) FILTER (WHERE embedding_status = 'indexed') as indexed,
-                    COUNT(*) FILTER (WHERE embedding_status = 'pending') as pending,
+                    COUNT(*) FILTER (
+                        WHERE embedding_status = 'pending'
+                           OR embedding_status IS NULL
+                    ) as pending,
                     COUNT(*) FILTER (WHERE embedding_status = 'failed') as failed
                 FROM document_chunks
                 WHERE document_id = %s
             """, (document_id,))
             row = cur.fetchone()
             cur.close()
+            total = row[0] or 0
+            indexed = row[1] or 0
             return {
-                "total": row[0],
-                "indexed": row[1],
-                "pending": row[2],
-                "failed": row[3]
+                "total": total,
+                "indexed": indexed,
+                "pending": row[2] or 0,
+                "failed": row[3] or 0,
+                "percent_complete": round(indexed * 100.0 / total, 1) if total else 0.0,
             }
         finally:
             conn.close()

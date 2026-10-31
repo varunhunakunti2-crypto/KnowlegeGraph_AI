@@ -333,6 +333,9 @@ def test_live_graph_storage_and_api_roundtrip():
             "CREATED",
             "LOCATED_IN",
         }
+        # Outgoing-only traversal must return one edge per stored relationship,
+        # not a forward and reverse copy.
+        assert len(graph["edges"]) == 2
 
         client = httpx.Client(
             base_url=BASE_URL, timeout=httpx.Timeout(30.0, connect=10.0)
@@ -352,6 +355,7 @@ def test_live_graph_storage_and_api_roundtrip():
             "CREATED",
             "LOCATED_IN",
         }
+        assert len(api_graph["edges"]) == 2
     finally:
         graph_db.delete_document_graph(document_id)
 

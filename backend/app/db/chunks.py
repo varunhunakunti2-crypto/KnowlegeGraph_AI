@@ -1,7 +1,7 @@
 """Chunk database operations with idempotent ingestion."""
 import psycopg
 from app.core.config import settings
-from typing import List, Dict
+from typing import List, Dict, Optional
 import json
 from uuid import uuid4
 
@@ -71,18 +71,32 @@ class ChunkDB:
             conn.close()
     
     @staticmethod
-    def get_chunks_by_document(document_id: str) -> List[Dict]:
+    def get_chunks_by_document(document_id: str, limit: Optional[int] = None) -> List[Dict]:
+        """Return chunks ordered by index, optionally bounded by ``limit``.
+
+        Graph extraction passes the configured work limit so a large document
+        is never materialized in full just to be truncated afterwards.
+        """
+        query = """
+            SELECT chunk_id, document_id, page_number, chunk_index,
+                   chunk_text, char_count, created_at
+            FROM document_chunks
+            WHERE document_id = %s
+            ORDER BY chunk_index
+        """
+        params: list = [document_id]
+        if limit is not None:
+            bound = max(1, min(int(limit), 100_000))
+            query += " LIMIT %s"
+            params.append(bound)
+
         conn = ChunkDB.get_connection()
-        with conn.cursor() as cur:
-            cur.execute("""
-                SELECT chunk_id, document_id, page_number, chunk_index, 
-                       chunk_text, char_count, created_at
-                FROM document_chunks 
-                WHERE document_id = %s
-                ORDER BY chunk_index
-            """, (document_id,))
-            rows = cur.fetchall()
-        conn.close()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(query, params)
+                rows = cur.fetchall()
+        finally:
+            conn.close()
         return [{
             "chunk_id": str(row[0]),
             "document_id": str(row[1]),

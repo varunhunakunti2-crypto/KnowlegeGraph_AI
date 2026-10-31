@@ -15,6 +15,28 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 # README starts uvicorn from backend/). Later files take precedence.
 _ENV_FILES = (_BACKEND_DIR / ".env", _REPO_ROOT / ".env")
 
+# Applied by MEMORY_PROFILE=low-memory unless the field is explicitly set.
+# These values keep peak VRAM/RAM inside an RTX 4050 (6 GB) + 16 GB laptop.
+_LOW_MEMORY_DEFAULTS = {
+    "MODEL_CONTEXT_LENGTH": 2048,
+    "OLLAMA_MAX_TOKENS": 384,
+    "OLLAMA_NUM_BATCH": 128,
+    "OLLAMA_KEEP_ALIVE": "2m",
+    "OLLAMA_IDLE_UNLOAD_SECONDS": 120,
+    "OLLAMA_SINGLE_MODEL_RESIDENT": True,
+    "MAX_CONTEXT_TOKENS": 1536,
+    "EMBEDDING_BATCH_SIZE": 8,
+    "BATCH_SIZE": 8,
+    "INDEX_BATCH_SIZE": 4,
+    "MAX_INDEX_BATCH_FAILURES": 2,
+    "MAX_CONCURRENT_REQUESTS": 1,
+    "MAX_CONCURRENT_UPLOADS": 1,
+    "TOP_K_CHUNKS": 5,
+    "MAX_EVIDENCE_ITEMS": 8,
+    "GRAPH_TRAVERSAL_DEPTH": 1,
+    "MAX_GRAPH_EXTRACTION_CHUNKS": 25,
+}
+
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
@@ -38,6 +60,16 @@ class Settings(BaseSettings):
     OLLAMA_TIMEOUT: int = Field(default=300)
     OLLAMA_TEMPERATURE: float = Field(default=0.1)
     OLLAMA_MAX_TOKENS: int = Field(default=2048)
+    # How long Ollama keeps a model resident after a request (for example
+    # "5m", "30s", "1h", or -1 to keep it loaded indefinitely).
+    OLLAMA_KEEP_ALIVE: str = Field(default="5m")
+    # Unload the app's models after this many seconds without model work.
+    # 0 disables idle unloading. Low-memory profile defaults to 120s.
+    OLLAMA_IDLE_UNLOAD_SECONDS: int = Field(default=900, ge=0, le=86400)
+    # Prompt-processing batch size. Smaller values reduce peak VRAM.
+    OLLAMA_NUM_BATCH: int = Field(default=512, ge=1, le=2048)
+    # In low-memory mode only one model may stay resident at a time.
+    OLLAMA_SINGLE_MODEL_RESIDENT: bool = Field(default=False)
     
     # Neo4j
     NEO4J_URI: str = Field(default="bolt://localhost:7687")
@@ -82,9 +114,23 @@ class Settings(BaseSettings):
     MAX_CONCURRENT_UPLOADS: int = Field(default=2, ge=1, le=8)
     MODEL_CONTEXT_LENGTH: int = Field(default=4096, ge=512, le=32768)
     BATCH_SIZE: int = Field(default=16, ge=1, le=128)
+    # Rows committed per indexing batch. Small batches make indexing resumable
+    # after a crash or OOM without losing completed work.
+    INDEX_BATCH_SIZE: int = Field(default=8, ge=1, le=128)
+    MAX_INDEX_BATCH_FAILURES: int = Field(default=3, ge=1, le=20)
     DB_CONNECT_TIMEOUT_SECONDS: int = Field(default=5, ge=1, le=60)
     NEO4J_QUERY_TIMEOUT_SECONDS: int = Field(default=10, ge=1, le=120)
     OLLAMA_MAX_RETRIES: int = Field(default=2, ge=0, le=5)
+
+    # Memory profile and guard. "low-memory" caps context, batches, concurrency
+    # and graph work for the 6 GB / 16 GB laptop target. Explicit environment
+    # values always win over profile defaults.
+    MEMORY_PROFILE: str = Field(default="default")
+    MEMORY_GUARD_ENABLED: bool = Field(default=True)
+    OLLAMA_UNLOAD_ON_MEMORY_PRESSURE: bool = Field(default=True)
+    MIN_FREE_MEMORY_MB: int = Field(default=1024, ge=128, le=32768)
+    MIN_FREE_VRAM_MB: int = Field(default=512, ge=0, le=24576)
+    MEMORY_CHECK_INTERVAL_SECONDS: int = Field(default=30, ge=5, le=600)
     
     # Retrieval / graph safety
     MAX_GRAPH_LIMIT: int = Field(default=200, ge=1, le=1000)
@@ -109,6 +155,18 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def _validate_security_settings(self):
         """Reject configurations that would weaken local-only defaults."""
+        if self.MEMORY_PROFILE not in {"default", "low-memory"}:
+            raise ValueError(
+                "MEMORY_PROFILE must be 'default' or 'low-memory'"
+            )
+        if self.MEMORY_PROFILE == "low-memory":
+            # Explicit environment/constructor values always win. These are
+            # only applied when the operator selected the profile without
+            # overriding the individual limits.
+            for field, value in _LOW_MEMORY_DEFAULTS.items():
+                if field not in self.model_fields_set:
+                    object.__setattr__(self, field, value)
+
         origins = [o.strip() for o in self.BACKEND_CORS_ORIGINS.split(",") if o.strip()]
         if "*" in origins:
             raise ValueError(

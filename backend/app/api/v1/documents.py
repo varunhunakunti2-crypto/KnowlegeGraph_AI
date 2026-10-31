@@ -19,6 +19,7 @@ from app.db.graph import graph_db
 from app.core.config import settings
 from app.core.logging import logger
 from app.core.resources import upload_semaphore
+from app.core.memory import InsufficientMemoryError
 from app.core.security import (
     SecurityValidationError,
     redact_local_paths,
@@ -269,13 +270,19 @@ async def index_document(document_id: str):
     except SecurityValidationError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
 
-    if not DocumentDB.get_document(document_id):
+    if not DocumentDB.document_exists(document_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
 
     try:
         result = await VectorDB.index_document_chunks(document_id)
         status_info = VectorDB.get_indexing_status(document_id)
         return {"document_id": document_id, "indexing_result": result, "status": status_info}
+    except InsufficientMemoryError as exc:
+        logger.error("Indexing stopped: insufficient local memory")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        )
     except Exception as exc:
         logger.error(f"Indexing failed: {type(exc).__name__}")
         raise HTTPException(
@@ -317,7 +324,7 @@ async def get_index_status(document_id: str):
     except SecurityValidationError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
 
-    if not DocumentDB.get_document(document_id):
+    if not DocumentDB.document_exists(document_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
 
     try:
@@ -334,7 +341,7 @@ async def delete_document(document_id: str):
     except SecurityValidationError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
 
-    if not DocumentDB.get_document(document_id):
+    if not DocumentDB.document_exists(document_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
 
     warnings = []

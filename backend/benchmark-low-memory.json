@@ -1,0 +1,256 @@
+{
+  "generated_at": "2026-10-31T16:50:53.215747+00:00",
+  "measurement_note": "All values under measurements come from this machine/Ollama. Estimates are derived arithmetically and labeled separately.",
+  "host": {
+    "ollama_models": [
+      "qwen3:4b",
+      "nomic-embed-text:latest"
+    ],
+    "system_ram_total_mb": 16202,
+    "system_ram_available_mb": 4012,
+    "gpu": {
+      "name": "NVIDIA GeForce RTX 4050 Laptop GPU",
+      "vram_total_mb": 6141.0,
+      "vram_used_mb": 1239.0,
+      "vram_free_mb": 4682.0,
+      "utilization_percent": 0.0,
+      "temperature_c": 49.0,
+      "driver_version": "591.91",
+      "power_w": 16.75
+    },
+    "platform": {
+      "python": "3.14.5",
+      "executable": "C:\\Users\\varun\\Music\\New folder\\Projects\\KnowledgeGraph AI\\backend\\.venv\\Scripts\\python.exe"
+    }
+  },
+  "config": {
+    "model": "qwen3:4b",
+    "embed_model": "nomic-embed-text",
+    "context_length": 2048,
+    "num_batch": 128,
+    "keep_alive": "5m",
+    "think": false
+  },
+  "measurements": {
+    "models_loaded_before": [],
+    "cold_load": {
+      "wall_seconds": 3.66,
+      "load_seconds": 3.475,
+      "prompt_tokens": 17,
+      "output_tokens": 8,
+      "prompt_tokens_per_second": 333.9,
+      "output_tokens_per_second": 62.7,
+      "total_seconds_reported": 3.659,
+      "response_chars": 30,
+      "samples": {
+        "gpu": {
+          "name": "NVIDIA GeForce RTX 4050 Laptop GPU",
+          "utilization_percent": {
+            "avg": 7.0,
+            "max": 28.0,
+            "min": 0.0,
+            "samples": 11
+          },
+          "vram_used_mb": {
+            "avg": 2164.9,
+            "max": 4002.0,
+            "min": 1229.0,
+            "samples": 11
+          },
+          "temperature_c": {
+            "avg": 48.7,
+            "max": 49.0,
+            "min": 48.0,
+            "samples": 11
+          }
+        },
+        "system_available_mb": {
+          "avg": 3699.3,
+          "max": 4031.6,
+          "min": 3333.3,
+          "samples": 11
+        }
+      }
+    },
+    "generation": {
+      "runs": [
+        {
+          "wall_seconds": 1.406,
+          "load_seconds": 0.012,
+          "prompt_tokens": 20,
+          "output_tokens": 64,
+          "prompt_tokens_per_second": 728.0,
+          "output_tokens_per_second": 47.2,
+          "total_seconds_reported": 1.404,
+          "response_chars": 292
+        },
+        {
+          "wall_seconds": 1.508,
+          "load_seconds": 0.013,
+          "prompt_tokens": 20,
+          "output_tokens": 64,
+          "prompt_tokens_per_second": 606.2,
+          "output_tokens_per_second": 44.3,
+          "total_seconds_reported": 1.507,
+          "response_chars": 353
+        }
+      ],
+      "median_output_tokens_per_second": 45.8,
+      "samples": {
+        "gpu": {
+          "name": "NVIDIA GeForce RTX 4050 Laptop GPU",
+          "utilization_percent": {
+            "avg": 83.6,
+            "max": 95.0,
+            "min": 0.0,
+            "samples": 9
+          },
+          "vram_used_mb": {
+            "avg": 4001.0,
+            "max": 4001.0,
+            "min": 4001.0,
+            "samples": 9
+          },
+          "temperature_c": {
+            "avg": 51.8,
+            "max": 54.0,
+            "min": 49.0,
+            "samples": 9
+          }
+        },
+        "system_available_mb": {
+          "avg": 3284.4,
+          "max": 3341.0,
+          "min": 3218.6,
+          "samples": 9
+        }
+      }
+    },
+    "embeddings": {
+      "runs": [
+        {
+          "batch_size": 1,
+          "wall_seconds": 0.043,
+          "dimension": 768,
+          "texts_per_second": 23.17,
+          "samples": {
+            "gpu": {
+              "name": "NVIDIA GeForce RTX 4050 Laptop GPU",
+              "utilization_percent": {
+                "avg": 0.0,
+                "max": 0.0,
+                "min": 0.0,
+                "samples": 1
+              },
+              "vram_used_mb": {
+                "avg": 4436.0,
+                "max": 4436.0,
+                "min": 4436.0,
+                "samples": 1
+              },
+              "temperature_c": {
+                "avg": 49.0,
+                "max": 49.0,
+                "min": 49.0,
+                "samples": 1
+              }
+            },
+            "system_available_mb": {
+              "avg": 2697.8,
+              "max": 2697.8,
+              "min": 2697.8,
+              "samples": 1
+            }
+          }
+        },
+        {
+          "batch_size": 8,
+          "wall_seconds": 0.076,
+          "dimension": 768,
+          "texts_per_second": 105.54,
+          "samples": {
+            "gpu": {
+              "name": "NVIDIA GeForce RTX 4050 Laptop GPU",
+              "utilization_percent": {
+                "avg": 0.0,
+                "max": 0.0,
+                "min": 0.0,
+                "samples": 1
+              },
+              "vram_used_mb": {
+                "avg": 4436.0,
+                "max": 4436.0,
+                "min": 4436.0,
+                "samples": 1
+              },
+              "temperature_c": {
+                "avg": 49.0,
+                "max": 49.0,
+                "min": 49.0,
+                "samples": 1
+              }
+            },
+            "system_available_mb": {
+              "avg": 2690.1,
+              "max": 2690.1,
+              "min": 2690.1,
+              "samples": 1
+            }
+          }
+        },
+        {
+          "batch_size": 16,
+          "wall_seconds": 0.133,
+          "dimension": 768,
+          "texts_per_second": 120.48,
+          "samples": {
+            "gpu": {
+              "name": "NVIDIA GeForce RTX 4050 Laptop GPU",
+              "utilization_percent": {
+                "avg": 28.0,
+                "max": 28.0,
+                "min": 28.0,
+                "samples": 1
+              },
+              "vram_used_mb": {
+                "avg": 4436.0,
+                "max": 4436.0,
+                "min": 4436.0,
+                "samples": 1
+              },
+              "temperature_c": {
+                "avg": 50.0,
+                "max": 50.0,
+                "min": 50.0,
+                "samples": 1
+              }
+            },
+            "system_available_mb": {
+              "avg": 2693.2,
+              "max": 2693.2,
+              "min": 2693.2,
+              "samples": 1
+            }
+          }
+        }
+      ],
+      "dimension_expected": 768
+    },
+    "models_loaded_after": [
+      {
+        "name": "nomic-embed-text:latest",
+        "size_mb": 320,
+        "vram_mb": 320
+      },
+      {
+        "name": "qwen3:4b",
+        "size_mb": 2683,
+        "vram_mb": 2683
+      }
+    ]
+  },
+  "estimates": {
+    "chunks_per_minute_at_best_embed_batch": 7228.8,
+    "output_tokens_per_minute": 2748.0
+  }
+}

@@ -31,7 +31,7 @@ def test_delete_document_cleans_file_sql_and_graph(client: TestClient, tmp_path,
     stored.write_bytes(b"%PDF-1.4")
 
     monkeypatch.setattr(documents.settings, "UPLOAD_DIR", str(upload_dir))
-    monkeypatch.setattr(documents.DocumentDB, "get_document", lambda _: _document())
+    monkeypatch.setattr(documents.DocumentDB, "document_exists", lambda _: True)
     delete_row = Mock(return_value={"file_path": str(stored)})
     monkeypatch.setattr(documents.DocumentDB, "delete_document", delete_row)
     delete_graph = Mock()
@@ -57,7 +57,7 @@ def test_delete_succeeds_with_warning_when_graph_is_unavailable(
     stored.write_bytes(b"%PDF-1.4")
 
     monkeypatch.setattr(documents.settings, "UPLOAD_DIR", str(upload_dir))
-    monkeypatch.setattr(documents.DocumentDB, "get_document", lambda _: _document())
+    monkeypatch.setattr(documents.DocumentDB, "document_exists", lambda _: True)
     monkeypatch.setattr(
         documents.DocumentDB,
         "delete_document",
@@ -88,7 +88,7 @@ def test_delete_never_removes_files_outside_upload_dir(
     outside.write_text("do not delete")
 
     monkeypatch.setattr(documents.settings, "UPLOAD_DIR", str(upload_dir))
-    monkeypatch.setattr(documents.DocumentDB, "get_document", lambda _: _document())
+    monkeypatch.setattr(documents.DocumentDB, "document_exists", lambda _: True)
     monkeypatch.setattr(
         documents.DocumentDB,
         "delete_document",
@@ -118,7 +118,7 @@ def test_delete_rejects_malformed_document_id(client: TestClient, monkeypatch):
 
 @pytest.mark.unit
 def test_delete_missing_document_returns_404(client: TestClient, monkeypatch):
-    monkeypatch.setattr(documents.DocumentDB, "get_document", lambda _: None)
+    monkeypatch.setattr(documents.DocumentDB, "document_exists", lambda _: False)
     delete_graph = Mock()
     monkeypatch.setattr(documents.graph_db, "delete_document_graph", delete_graph)
 

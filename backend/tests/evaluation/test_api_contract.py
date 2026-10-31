@@ -97,7 +97,12 @@ def test_chat_response_has_every_field_the_ui_renders(client, monkeypatch):
         "generate_answer",
         AsyncMock(return_value=_generation_result()),
     )
-    monkeypatch.setattr(chat_api.DocumentDB, "get_document", lambda _document_id: _document())
+    monkeypatch.setattr(chat_api.DocumentDB, "document_exists", lambda _document_id: True)
+    monkeypatch.setattr(
+        chat_api.DocumentDB,
+        "get_document_filename",
+        lambda _document_id: _document()["original_filename"],
+    )
 
     response = client.post(
         "/api/v1/chat/",

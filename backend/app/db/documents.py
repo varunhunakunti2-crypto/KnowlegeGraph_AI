@@ -138,6 +138,32 @@ class DocumentDB:
         } for row in rows]
     
     @staticmethod
+    def document_exists(doc_id: str) -> bool:
+        """Cheap existence check that does not load the pages JSONB snapshot."""
+        conn = DocumentDB.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1 FROM documents WHERE document_id = %s", (doc_id,))
+                return cur.fetchone() is not None
+        finally:
+            conn.close()
+
+    @staticmethod
+    def get_document_filename(doc_id: str) -> Optional[str]:
+        """Return only the display filename for citation labels."""
+        conn = DocumentDB.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT original_filename FROM documents WHERE document_id = %s",
+                    (doc_id,),
+                )
+                row = cur.fetchone()
+            return row[0] if row else None
+        finally:
+            conn.close()
+
+    @staticmethod
     def get_document_file_path(doc_id: str) -> Optional[str]:
         """Return the stored path for a document without exposing it in APIs."""
         conn = DocumentDB.get_connection()

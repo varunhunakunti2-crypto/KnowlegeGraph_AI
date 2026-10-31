@@ -20,9 +20,23 @@ export default function DocumentsPage() {
   };
 
   useEffect(() => {
-    fetchDocuments();
-    const interval = setInterval(fetchDocuments, 5000);
-    return () => clearInterval(interval);
+    let cancelled = false;
+    const loadDocuments = () => {
+      apiClient.getDocuments()
+        .then((docs) => {
+          if (!cancelled) setDocuments(docs as Document[]);
+        })
+        .catch((err) => {
+          console.error(err);
+        });
+    };
+
+    loadDocuments();
+    const interval = setInterval(loadDocuments, 5000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
   }, []);
 
   const handleUpload = async () => {
@@ -32,9 +46,9 @@ export default function DocumentsPage() {
     try {
       await apiClient.uploadDocument(file);
       setFile(null);
-      fetchDocuments();
-    } catch (err: any) {
-      setError(err.message || 'Upload failed');
+      await fetchDocuments();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Upload failed');
     } finally {
       setUploading(false);
     }
@@ -44,8 +58,8 @@ export default function DocumentsPage() {
     if (!confirm('Delete this document?')) return;
     try {
       await apiClient.deleteDocument(id);
-      fetchDocuments();
-    } catch (err) {
+      await fetchDocuments();
+    } catch {
       alert('Delete failed');
     }
   };

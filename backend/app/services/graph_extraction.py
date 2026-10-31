@@ -7,6 +7,7 @@ from app.schemas.graph import (
 )
 from app.core.config import settings
 from app.core.logging import logger
+from app.core.memory import InsufficientMemoryError
 from typing import List, Dict
 import json
 import re
@@ -229,6 +230,10 @@ Text:
             data = json.loads(json_str)
             sanitized = self._sanitize_extraction(data, chunk)
             return GraphExtractionResult(**sanitized)
+        except InsufficientMemoryError:
+            # A hardware limit must reach the API as a clear 503, not as an
+            # empty extraction that looks like a model-quality problem.
+            raise
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse JSON: {type(e).__name__}")
             return GraphExtractionResult(entities=[], relationships=[])

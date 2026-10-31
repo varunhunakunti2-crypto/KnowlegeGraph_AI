@@ -2,12 +2,12 @@
 
 import { useState } from 'react';
 import { apiClient } from '@/lib/api';
-import { ChatResponse } from '@/types/api';
+import { ChatResponse, Citation } from '@/types/api';
 
 interface Message {
   role: 'user' | 'assistant';
   content: string;
-  citations?: any[];
+  citations?: Citation[];
 }
 
 export default function ChatPage() {
@@ -29,7 +29,7 @@ export default function ChatPage() {
         content: response.answer,
         citations: response.citations 
       }]);
-    } catch (err) {
+    } catch {
       setMessages(prev => [...prev, { 
         role: 'assistant', 
         content: 'Error: Failed to get response. Please try again.' 

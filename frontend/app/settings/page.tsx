@@ -2,10 +2,11 @@
 
 import { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api';
+import { HealthResponse, ModelStatus } from '@/types/api';
 
 export default function SettingsPage() {
-  const [health, setHealth] = useState<any>(null);
-  const [models, setModels] = useState<any>(null);
+  const [health, setHealth] = useState<HealthResponse | null>(null);
+  const [models, setModels] = useState<ModelStatus | null>(null);
 
   useEffect(() => {
     const fetchStatus = async () => {
