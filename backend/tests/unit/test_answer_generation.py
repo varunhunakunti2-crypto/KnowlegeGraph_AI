@@ -30,6 +30,9 @@ async def test_answer_with_citations(mock_llm):
     result = await generator.generate_answer("Question?", evidence)
     assert len(result["citations"]) == 1
     assert result["citations"][0]["chunk_id"] == "abc123"
+    # Qwen3 must not spend the output budget on hidden reasoning; otherwise
+    # citation-heavy questions can return an empty answer.
+    assert mock_llm.generate.await_args.kwargs["think"] is False
 
 
 @pytest.mark.unit

@@ -30,7 +30,8 @@ def test_non_http_cors_origin_is_rejected():
 
 @pytest.mark.unit
 def test_default_database_hosts_are_local():
-    settings = Settings()
+    # Test the code defaults, not the developer's .env overrides.
+    settings = Settings(_env_file=None)
     assert settings.NEO4J_URI.startswith("bolt://localhost")
     assert settings.POSTGRES_HOST == "localhost"
     assert settings.BACKEND_HOST == "127.0.0.1"
