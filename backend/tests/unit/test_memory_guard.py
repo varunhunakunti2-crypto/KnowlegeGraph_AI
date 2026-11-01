@@ -121,6 +121,9 @@ def test_before_model_call_unloads_then_fails_fast_when_ram_is_critical(monkeypa
         },
     )
     monkeypatch.setattr(memory, "unload_app_models", lambda: unloaded.append(True))
+    monkeypatch.setattr(
+        memory, "loaded_models", lambda: {"reachable": True, "models": []}
+    )
     monkeypatch.setattr(memory.settings, "MIN_FREE_MEMORY_MB", 1024)
     monkeypatch.setattr(memory.settings, "MEMORY_GUARD_ENABLED", True)
     monkeypatch.setattr(memory.settings, "OLLAMA_UNLOAD_ON_MEMORY_PRESSURE", True)
@@ -129,6 +132,38 @@ def test_before_model_call_unloads_then_fails_fast_when_ram_is_critical(monkeypa
         memory.before_model_call("qwen3:4b")
 
     assert unloaded == [True]
+
+
+@pytest.mark.unit
+def test_before_model_call_keeps_a_resident_model_under_pressure(monkeypatch):
+    """A model that is already loaded is usable even when free RAM looks low."""
+    unloaded = []
+    monkeypatch.setattr(memory, "_ensure_single_resident", lambda _model: None)
+    monkeypatch.setattr(
+        memory,
+        "memory_pressure",
+        lambda: {
+            "active": True,
+            "system_memory": {"available": True, "available_mb": 200},
+            "gpu": None,
+            "reasons": ["low ram"],
+        },
+    )
+    monkeypatch.setattr(
+        memory,
+        "loaded_models",
+        lambda: {
+            "reachable": True,
+            "models": [{"name": memory.settings.OLLAMA_EMBED_MODEL}],
+        },
+    )
+    monkeypatch.setattr(memory, "unload_app_models", lambda: unloaded.append(True))
+    monkeypatch.setattr(memory.settings, "MEMORY_GUARD_ENABLED", True)
+    monkeypatch.setattr(memory.settings, "OLLAMA_UNLOAD_ON_MEMORY_PRESSURE", True)
+
+    memory.before_model_call(memory.settings.OLLAMA_EMBED_MODEL)
+
+    assert unloaded == []
 
 
 @pytest.mark.unit

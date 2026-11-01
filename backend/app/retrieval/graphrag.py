@@ -3,6 +3,7 @@ from app.db.vectors import VectorDB
 from app.db.graph import GraphDB
 from app.core.config import settings
 from app.core.logging import logger
+from app.core.memory import InsufficientMemoryError
 from app.core.security import clamp_int
 from typing import List, Dict, Optional
 import asyncio
@@ -58,6 +59,11 @@ class GraphRAGRetriever:
                     "entity_id": None,
                     "relationship_info": None
                 })
+        except InsufficientMemoryError:
+            # Memory exhaustion is an infrastructure condition, not "no
+            # evidence". Let the API surface a clear 503 instead of silently
+            # returning an empty answer.
+            raise
         except Exception as e:
             logger.error(f"Vector retrieval failed: {type(e).__name__}")
 
@@ -78,6 +84,8 @@ class GraphRAGRetriever:
                     "entity_id": result.get("entity_id"),
                     "relationship_info": result.get("relationship")
                 })
+        except InsufficientMemoryError:
+            raise
         except Exception as e:
             logger.error(f"Graph retrieval failed: {type(e).__name__}")
 

@@ -329,9 +329,20 @@ def before_model_call(model: str) -> None:
     _ensure_single_resident(model)
 
     pressure = memory_pressure()
-    if pressure["active"] and settings.OLLAMA_UNLOAD_ON_MEMORY_PRESSURE:
-        unload_app_models()
-        pressure = memory_pressure()
+    if pressure["active"]:
+        # If the requested model is already resident, do not unload it just to
+        # re-check free memory: the allocation is already paid and a reload
+        # would be slower and can fail on an otherwise working request.
+        state = loaded_models()
+        resident = state["reachable"] and any(
+            m.get("name") and _same_model(m["name"], model)
+            for m in state["models"]
+        )
+        if resident:
+            return
+        if settings.OLLAMA_UNLOAD_ON_MEMORY_PRESSURE:
+            unload_app_models()
+            pressure = memory_pressure()
 
     available = pressure["system_memory"].get("available_mb")
     critical_floor = max(256, settings.MIN_FREE_MEMORY_MB // 2)

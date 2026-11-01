@@ -2,6 +2,7 @@
 import pytest
 from unittest.mock import Mock, patch, AsyncMock
 from app.retrieval.graphrag import GraphRAGRetriever
+from app.core.memory import InsufficientMemoryError
 
 
 @pytest.mark.unit
@@ -25,6 +26,50 @@ async def test_retrieval_with_no_evidence(mock_graph_db, mock_vector_db):
     assert result["has_evidence"] is False
     assert result["evidence"] == []
     assert "insufficient" in result["message"].lower()
+
+
+@pytest.mark.unit
+@patch('app.retrieval.graphrag.VectorDB')
+@patch('app.retrieval.graphrag.GraphDB')
+async def test_vector_memory_error_is_not_hidden(mock_graph_db, mock_vector_db):
+    """A memory failure must reach the API as a 503, not an empty answer."""
+    mock_vector_instance = Mock()
+    mock_vector_instance.search_similar = AsyncMock(
+        side_effect=InsufficientMemoryError("not enough memory")
+    )
+    mock_vector_db.return_value = mock_vector_instance
+
+    mock_graph_instance = Mock()
+    mock_graph_instance.connect = Mock()
+    mock_graph_db.return_value = mock_graph_instance
+
+    retriever = GraphRAGRetriever()
+    retriever._graph_retrieval = Mock(return_value=[])
+
+    with pytest.raises(InsufficientMemoryError):
+        await retriever.retrieve("test question")
+
+
+@pytest.mark.unit
+@patch('app.retrieval.graphrag.VectorDB')
+@patch('app.retrieval.graphrag.GraphDB')
+async def test_graph_memory_error_is_not_hidden(mock_graph_db, mock_vector_db):
+    """Memory errors from the graph channel also propagate."""
+    mock_vector_instance = Mock()
+    mock_vector_instance.search_similar = AsyncMock(return_value=[])
+    mock_vector_db.return_value = mock_vector_instance
+
+    mock_graph_instance = Mock()
+    mock_graph_instance.connect = Mock()
+    mock_graph_db.return_value = mock_graph_instance
+
+    retriever = GraphRAGRetriever()
+    retriever._graph_retrieval = Mock(
+        side_effect=InsufficientMemoryError("not enough memory")
+    )
+
+    with pytest.raises(InsufficientMemoryError):
+        await retriever.retrieve("test question")
 
 
 @pytest.mark.unit
