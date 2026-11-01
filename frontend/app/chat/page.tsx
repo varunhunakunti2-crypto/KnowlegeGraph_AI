@@ -29,10 +29,10 @@ export default function ChatPage() {
         content: response.answer,
         citations: response.citations 
       }]);
-    } catch {
+    } catch (err) {
       setMessages(prev => [...prev, { 
         role: 'assistant', 
-        content: 'Error: Failed to get response. Please try again.' 
+        content: err instanceof Error ? `Error: ${err.message}` : 'Error: Failed to get response. Please try again.'
       }]);
     } finally {
       setLoading(false);

@@ -19,10 +19,27 @@ class ApiClient {
     });
 
     if (!response.ok) {
-      throw new Error(`API error: ${response.status}`);
+      throw new Error(await this.errorMessage(response, 'API error'));
     }
 
     return response.json();
+  }
+
+  private async errorMessage(response: Response, prefix: string): Promise<string> {
+    let detail = '';
+    try {
+      const payload = await response.json();
+      if (typeof payload?.detail === 'string') {
+        detail = payload.detail;
+      } else if (payload?.detail) {
+        detail = JSON.stringify(payload.detail);
+      }
+    } catch {
+      // The response may not be JSON; the status code is still useful.
+    }
+    return detail
+      ? `${prefix}: ${response.status} - ${detail}`
+      : `${prefix}: ${response.status}`;
   }
 
   async getHealth(): Promise<HealthResponse> {
@@ -52,7 +69,7 @@ class ApiClient {
     });
 
     if (!response.ok) {
-      throw new Error(`Upload failed: ${response.status}`);
+      throw new Error(await this.errorMessage(response, 'Upload failed'));
     }
 
     return response.json();
